@@ -40,6 +40,7 @@ sales-bi-dashboard/
 ├── tests/
 │   └── test_sales_quality.py  # pytest coverage for the checks and KPIs
 ├── requirements-dev.txt       # Test dependencies
+├── pytest.ini                 # Puts the repo root on the test import path
 ├── .github/workflows/ci.yml   # Runs pytest on pull requests
 ├── components/
 │   ├── kpi_cards.py           # KPI metric card components
