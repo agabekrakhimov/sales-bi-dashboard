@@ -36,6 +36,12 @@ The dashboard features 4 pages:
 ```
 sales-bi-dashboard/
 ├── app.py                     # Main Streamlit app entry point
+├── sales_quality.py           # Sample orders, KPI math, data checks
+├── tests/
+│   └── test_sales_quality.py  # pytest coverage for the checks and KPIs
+├── requirements-dev.txt       # Test dependencies
+├── pytest.ini                 # Puts the repo root on the test import path
+├── .github/workflows/ci.yml   # Runs pytest on pull requests
 ├── components/
 │   ├── kpi_cards.py           # KPI metric card components
 │   ├── sales_charts.py        # Revenue & trend charts
@@ -67,14 +73,25 @@ cd sales-bi-dashboard
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Generate sample data (no DB needed)
-python data/generate_sample_data.py
+# 3. Optional: check the sample orders (no database)
+python sales_quality.py
 
 # 4. Run the dashboard
 streamlit run app.py
 ```
 
-Open [http://localhost:8501](http://localhost:8501) in your browser.
+`pyarrow` is pinned to 15.0.2. Current pyarrow builds require NumPy 2, and this project stays on NumPy 1.26. Without the pin, a fresh install fails when Streamlit imports.
+
+Open [http://localhost:8501](http://localhost:8501) in your browser. The app builds the sample frame itself.
+
+### Run the tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+GitHub Actions installs `requirements-dev.txt` and runs the same suite on every pull request and on pushes to `main`.
 
 ### Option B: Connect to your data warehouse
 
@@ -90,6 +107,20 @@ DB_PASSWORD=your_password
 Then set `USE_LIVE_DB=true` in `app.py`.
 
 ---
+
+## Data checks
+
+`sales_quality.py` is the piece the dashboard reads before it draws charts.
+
+The sample used to draw unit cost on its own range. Cost often landed above price, so gross profit and margin went negative with nothing to flag it. The overview "average margin" was also the mean of line-level percentages, which gives a $15 order the same weight as a $2,000 order.
+
+What it does now:
+
+- `build_sample_orders` sets unit cost to 40–80% of unit price, so sample gross profit stays non-negative. Same seed, same frame.
+- `validate_orders` checks the frame the sidebar reports on: required columns, nulls, unique order ids, positive quantity and price, non-negative cost, cost not above price, and the revenue, COGS, profit, and margin identities. Unknown categories, unknown regions, and bad dates fail too.
+- `kpi_summary` computes gross margin as total gross profit / total revenue. An empty filter shows "No orders match these filters." instead of sending empty series into the charts.
+
+`python sales_quality.py` prints each check and the headline KPIs. A failed check exits non-zero. The dashboard shows the same result in the sidebar.
 
 ## 🔍 SQL Queries
 

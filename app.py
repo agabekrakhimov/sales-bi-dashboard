@@ -7,11 +7,10 @@ Run: streamlit run app.py
 """
 
 import streamlit as st
-import pandas as pd
-import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from pathlib import Path
+
+from sales_quality import build_sample_orders, kpi_summary, validate_orders
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -43,33 +42,8 @@ st.markdown("""
 # ── Data loading ──────────────────────────────────────────────────────────────
 @st.cache_data
 def load_data():
-    """Load sample data or connect to DB."""
-    np.random.seed(42)
-    n = 10_000
-
-    dates = pd.date_range("2023-01-01", "2024-12-31", periods=n)
-    categories = ["Electronics", "Clothing", "Home & Garden", "Sports", "Books"]
-    regions    = ["North America", "Europe", "Asia Pacific", "Latin America", "Middle East"]
-
-    df = pd.DataFrame({
-        "order_date":    np.random.choice(dates, n),
-        "order_id":      range(1, n + 1),
-        "product":       [f"Product {chr(65 + i % 26)}{i % 50:02d}" for i in range(n)],
-        "category":      np.random.choice(categories, n, p=[0.30, 0.25, 0.20, 0.15, 0.10]),
-        "region":        np.random.choice(regions, n, p=[0.35, 0.28, 0.20, 0.10, 0.07]),
-        "quantity":      np.random.randint(1, 8, n),
-        "unit_price":    np.random.uniform(10, 500, n).round(2),
-        "unit_cost":     np.random.uniform(5, 250, n).round(2),
-    })
-
-    df["revenue"]      = (df["quantity"] * df["unit_price"]).round(2)
-    df["cogs"]         = (df["quantity"] * df["unit_cost"]).round(2)
-    df["gross_profit"] = (df["revenue"] - df["cogs"]).round(2)
-    df["margin_pct"]   = (df["gross_profit"] / df["revenue"] * 100).round(1)
-    df["month"]        = pd.to_datetime(df["order_date"]).dt.to_period("M").astype(str)
-    df["year"]         = pd.to_datetime(df["order_date"]).dt.year
-    df["quarter"]      = pd.to_datetime(df["order_date"]).dt.to_period("Q").astype(str)
-    return df
+    """Sample orders. Unit cost stays below price; see sales_quality.py."""
+    return build_sample_orders()
 
 
 df = load_data()
@@ -97,11 +71,24 @@ filtered = df[mask]
 
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"**{len(filtered):,}** orders selected")
+
+checks = validate_orders(df)
+failed_checks = [check for check in checks if not check.passed]
+if failed_checks:
+    detail = "; ".join(f"{check.name} ({check.detail})" for check in failed_checks)
+    st.sidebar.error(f"Data checks failed: {detail}")
+else:
+    st.sidebar.caption(f"{len(checks)} data checks passed")
+
 st.sidebar.markdown("Built by [Ogabek Rakhimov](https://www.linkedin.com/in/ogabekrakhimov/)")
 
 # ── Header ────────────────────────────────────────────────────────────────────
 st.title("📊 Sales Performance Dashboard")
 st.caption("Interactive BI dashboard — filter by year, category, and region using the sidebar.")
+
+if filtered.empty:
+    st.info("No orders match these filters.")
+    st.stop()
 
 tab1, tab2, tab3, tab4 = st.tabs(["🏠 Overview", "📈 Trends", "📦 Products", "🌍 Regional"])
 
@@ -109,23 +96,19 @@ tab1, tab2, tab3, tab4 = st.tabs(["🏠 Overview", "📈 Trends", "📦 Products
 with tab1:
     st.subheader("Executive KPIs")
 
-    total_rev  = filtered["revenue"].sum()
-    total_prof = filtered["gross_profit"].sum()
-    avg_margin = filtered["margin_pct"].mean()
-    total_ord  = filtered["order_id"].nunique()
-    aov        = total_rev / total_ord if total_ord > 0 else 0
+    kpis = kpi_summary(filtered)
 
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
-        st.metric("💰 Total Revenue", f"${total_rev:,.0f}", delta="vs last period")
+        st.metric("💰 Total Revenue", f"${kpis['revenue']:,.0f}")
     with col2:
-        st.metric("📈 Gross Profit", f"${total_prof:,.0f}")
+        st.metric("📈 Gross Profit", f"${kpis['gross_profit']:,.0f}")
     with col3:
-        st.metric("📊 Avg Margin", f"{avg_margin:.1f}%")
+        st.metric("📊 Gross Margin", f"{kpis['margin_pct']:.1f}%")
     with col4:
-        st.metric("🛒 Total Orders", f"{total_ord:,}")
+        st.metric("🛒 Total Orders", f"{kpis['orders']:,}")
     with col5:
-        st.metric("💳 Avg Order Value", f"${aov:,.2f}")
+        st.metric("💳 Avg Order Value", f"${kpis['aov']:,.2f}")
 
     st.markdown("---")
 
